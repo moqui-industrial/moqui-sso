@@ -3,7 +3,6 @@ package org.moqui.sso
 import org.moqui.context.ExecutionContext
 import org.moqui.impl.context.UserFacadeImpl
 import org.moqui.util.WebUtilities
-import org.pac4j.core.authorization.authorizer.DefaultAuthorizers
 import org.pac4j.core.client.Client
 import org.pac4j.core.config.Config
 import org.pac4j.core.context.session.SessionStore
@@ -12,13 +11,27 @@ import org.pac4j.core.engine.DefaultLogoutLogic
 import org.pac4j.core.engine.DefaultSecurityLogic
 import org.pac4j.core.profile.ProfileManager
 import org.pac4j.core.profile.UserProfile
+import org.pac4j.core.profile.factory.ProfileManagerFactory
 import org.pac4j.jee.context.JEEContext
+import org.pac4j.jee.context.JEEContextFactory
 import org.pac4j.jee.context.JEEFrameworkParameters
 import org.pac4j.jee.context.session.JEESessionStoreFactory
 import org.pac4j.jee.http.adapter.JEEHttpActionAdapter
 import org.pac4j.saml.state.SAML2StateGenerator
 
 class AuthenticationFlow {
+
+    static Config makeConfig(String callbackUrl, Client... clients) {
+        return new Config(callbackUrl, clients)
+                .setWebContextFactory(JEEContextFactory.INSTANCE)
+                .setSessionStoreFactory(JEESessionStoreFactory.INSTANCE)
+                .setProfileManagerFactory(ProfileManagerFactory.DEFAULT)
+                .setHttpActionAdapter(JEEHttpActionAdapter.INSTANCE)
+    }
+
+    static Config makeConfig(String callbackUrl, List<Client> clients) {
+        return makeConfig(callbackUrl, clients.toArray(new Client[0]))
+    }
 
     static SessionStore sessionStoreFor(ExecutionContext ec) {
         return JEESessionStoreFactory.INSTANCE.newSessionStore(
@@ -45,7 +58,6 @@ class AuthenticationFlow {
             JEEContext context = new JEEContext(ec.web.request, ec.web.response)
             SessionStore sessionStore = sessionStoreFor(ec)
             MoquiSecurityGrantedAccessAdapter securityGrantedAccessAdapter = new MoquiSecurityGrantedAccessAdapter(ec)
-            JEEHttpActionAdapter actionAdapter = JEEHttpActionAdapter.INSTANCE
 
             if (returnTo) {
                 ec.web.sessionAttributes.put("moquiAuthFlowReturnTo", returnTo)
@@ -53,17 +65,15 @@ class AuthenticationFlow {
             }
 
             Client client = new AuthenticationClientFactory(ec).build(authFlowId)
-            Config config = new Config(callbackUrl, client)
+            Config config = makeConfig(callbackUrl, client)
 
             DefaultSecurityLogic.INSTANCE.perform(
-                    context,
-                    sessionStore,
                     config,
                     securityGrantedAccessAdapter,
-                    actionAdapter,
                     authFlowId,
-                    DefaultAuthorizers.IS_AUTHENTICATED,
-                    null
+                    null,
+                    null,
+                    new JEEFrameworkParameters(ec.web.request, ec.web.response)
             )
         } catch (RuntimeException e) {
             ec.logger.error("An error occurred while performing login action", e)
@@ -82,22 +92,18 @@ class AuthenticationFlow {
             JEEContext context = new JEEContext(ec.web.request, ec.web.response)
             SessionStore sessionStore = sessionStoreFor(ec)
             MoquiSecurityGrantedAccessAdapter securityGrantedAccessAdapter = new MoquiSecurityGrantedAccessAdapter(ec)
-            JEEHttpActionAdapter actionAdapter = JEEHttpActionAdapter.INSTANCE
-
-            Config config = new Config(baseUrl + "/sso/callback", new AuthenticationClientFactory(ec).buildAll())
+            Config config = makeConfig(baseUrl + "/sso/callback", new AuthenticationClientFactory(ec).buildAll())
 
             String fromRelay = context.getRequestParameter("RelayState").orElse(null)
             String redirectTo = safeReturnTo(ec, fromRelay) ?:
                     safeReturnTo(ec, ec.web.sessionAttributes.moquiAuthFlowReturnTo as String)
 
             DefaultCallbackLogic.INSTANCE.perform(
-                    context,
-                    sessionStore,
                     config,
-                    actionAdapter,
                     null,
                     false,
-                    null
+                    null,
+                    new JEEFrameworkParameters(ec.web.request, ec.web.response)
             )
 
             ProfileManager profileManager = new ProfileManager(context, sessionStore)
@@ -130,22 +136,16 @@ class AuthenticationFlow {
         String callbackUrl = returnTo ?: loginFallback
 
         try {
-            JEEContext context = new JEEContext(ec.web.request, ec.web.response)
-            SessionStore sessionStore = sessionStoreFor(ec)
-            JEEHttpActionAdapter actionAdapter = JEEHttpActionAdapter.INSTANCE
-
-            Config config = new Config(baseUrl + "/sso/callback", new AuthenticationClientFactory(ec).buildAll())
+            Config config = makeConfig(baseUrl + "/sso/callback", new AuthenticationClientFactory(ec).buildAll())
 
             DefaultLogoutLogic.INSTANCE.perform(
-                    context,
-                    sessionStore,
                     config,
-                    actionAdapter,
                     callbackUrl,
                     null,
                     false,
                     false,
-                    true
+                    true,
+                    new JEEFrameworkParameters(ec.web.request, ec.web.response)
             )
 
             ec.user.logoutUser()

@@ -94,7 +94,13 @@ class MoquiSecurityGrantedAccessAdapter implements SecurityGrantedAccessAdapter 
                             .condition("userId", userId)
                             .conditionDate("fromDate", "thruDate", nowTimestamp)
                             .list()
-                    Set obsoleteUserGroupIdSet = new HashSet<>(userGroupMemberList*.userGroupId)
+                    Set existingUserGroupIdSet = new HashSet<>(userGroupMemberList*.userGroupId)
+                    EntityList roleMapList = ec.entity.find("moqui.security.sso.AuthFlowRoleMap")
+                            .condition("authFlowId", profile.clientName)
+                            .list()
+                    Set managedUserGroupIdSet = new HashSet<>(roleMapList*.userGroupId)
+                    Set obsoleteUserGroupIdSet = new HashSet<>(existingUserGroupIdSet)
+                    obsoleteUserGroupIdSet.retainAll(managedUserGroupIdSet)
 
                     // sync user groups
                     HashSet<String> roleSet = new HashSet<>()
@@ -109,10 +115,7 @@ class MoquiSecurityGrantedAccessAdapter implements SecurityGrantedAccessAdapter 
                         }
                     }
                     for (String role : roleSet) {
-                        EntityValue roleMap = ec.entity.find("moqui.security.sso.AuthFlowRoleMap")
-                                .condition("authFlowId", profile.clientName)
-                                .condition("roleName", role)
-                                .one()
+                        EntityValue roleMap = roleMapList.find { it.roleName == role }
                         if (roleMap?.userGroupId && !obsoleteUserGroupIdSet.remove(roleMap.userGroupId)) {
                             ec.service.sync().name("create#moqui.security.UserGroupMember")
                                     .parameter("userGroupId", roleMap.userGroupId)
