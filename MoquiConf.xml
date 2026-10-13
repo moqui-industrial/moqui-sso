@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!-- No copyright or license for configuration file, details here are not considered a creative work. -->
 <moqui-conf xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://moqui.org/xsd/moqui-conf-3.xsd">
+    <!-- The login form of an SSO provider is submitted to this site and answered with a redirect to the provider: a browser applies
+         form-action to that redirect, so the origin of the provider has to be named here (the local Keycloak of the AI stack). -->
+    <webapp-list>
+        <webapp name="webroot">
+            <response-header type="screen-render" name="Content-Security-Policy" value="frame-ancestors 'none'; form-action 'self' https://host.docker.internal:8444;"/>
+        </webapp>
+    </webapp-list>
     <screen-facade>
         <screen location="component://webroot/screen/webroot.xml">
             <subscreens-item name="sso" location="component://moqui-sso/screen/sso.xml"/>
